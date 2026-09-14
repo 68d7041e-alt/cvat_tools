@@ -1,0 +1,17 @@
+# Passwords, keys and machine-specific state
+secrets/
+certs/
+results/
+source_data/
+.venv/
+__pycache__
+scripts/__pycache__
+
+# make deploy renders the instance .env, with the admin password, here
+build/
+
+# Terraform local state and provider cache
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/.terraform.lock.hcl
