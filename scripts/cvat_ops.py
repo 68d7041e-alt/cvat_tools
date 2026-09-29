@@ -86,8 +86,9 @@ def label_names(client: Client, job_id: int) -> tuple[dict, dict]:
     return names, sublabels
 
 
-def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dict) -> list:
+def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dict) -> tuple:
     shapes = []
+    tags = []
     for image_name, figure in annotations.items():
         frame = frames.get(image_name)
         if frame is None:
@@ -98,10 +99,28 @@ def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dic
             if label_id is None:
                 sys.exit(f"label {shape['label']!r} was not created on the task")
 
-            if shape["type"] == "rectangle":
+            if shape["type"] == "tag":
+                tags.append(
+                    models.LabeledImageRequest(label_id=label_id, frame=frame, attributes=[])
+                )
+            elif shape["type"] == "rectangle":
                 shapes.append(
                     models.LabeledShapeRequest(
                         type=models.ShapeType("rectangle"),
+                        label_id=label_id,
+                        frame=frame,
+                        points=[float(value) for value in shape["points"]],
+                        occluded=False,
+                        outside=False,
+                        z_order=0,
+                        rotation=0.0,
+                        attributes=[],
+                    )
+                )
+            elif shape["type"] == "mask":
+                shapes.append(
+                    models.LabeledShapeRequest(
+                        type=models.ShapeType("mask"),
                         label_id=label_id,
                         frame=frame,
                         points=[float(value) for value in shape["points"]],
@@ -149,7 +168,7 @@ def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dic
                 )
             else:
                 sys.exit(f"unsupported shape type {shape['type']!r} for {image_name}")
-    return shapes
+    return shapes, tags
 
 
 def job_figures(client: Client, job, counts: Counter) -> dict:
@@ -168,8 +187,9 @@ def job_figures(client: Client, job, counts: Counter) -> dict:
     }
 
     counts["tracks"] += len(annotations.tracks)
-    counts["tags"] += len(annotations.tags)
-    return figures_from_shapes(frames, annotations.shapes, names, sublabels, counts)
+    return figures_from_shapes(
+        frames, annotations.shapes, annotations.tags, names, sublabels, counts
+    )
 
 
 def cmd_import(client: Client, args: argparse.Namespace) -> None:
@@ -179,8 +199,9 @@ def cmd_import(client: Client, args: argparse.Namespace) -> None:
 
     labels, annotations, images, counts = read_task(args.source)
     print(
-        f"{name}: {len(images)} images, {counts['boxes']} boxes, {counts['skeletons']} skeletons "
-        f"({counts['incomplete']} incomplete, {counts['dropped']} empty groups dropped)"
+        f"{name}: {len(images)} images, {counts['boxes']} boxes, {counts['masks']} masks, "
+        f"{counts['skeletons']} skeletons, {counts['trash']} trash "
+        f"({counts['incomplete']} incomplete, {counts['dropped']} empty dropped)"
     )
 
     project = client.projects.create({"name": name, "labels": labels})
@@ -196,10 +217,13 @@ def cmd_import(client: Client, args: argparse.Namespace) -> None:
 
     frames = {Path(frame.name).name: index for index, frame in enumerate(task.get_frames_info())}
     labels_by_name, sublabels_by_name = label_ids(task)
-    shapes = shape_requests(annotations, frames, labels_by_name, sublabels_by_name)
+    shapes, tags = shape_requests(annotations, frames, labels_by_name, sublabels_by_name)
 
-    task.set_annotations(models.LabeledDataRequest(shapes=shapes))
-    print(f"task {task.id}: {len(shapes)} shapes uploaded into {len(task.get_jobs())} job(s)")
+    task.set_annotations(models.LabeledDataRequest(shapes=shapes, tags=tags))
+    print(
+        f"task {task.id}: {len(shapes)} shapes and {len(tags)} tags uploaded "
+        f"into {len(task.get_jobs())} job(s)"
+    )
 
 
 def cmd_assign(client: Client, args: argparse.Namespace) -> None:
@@ -229,11 +253,11 @@ def cmd_export_figures(client: Client, args: argparse.Namespace) -> None:
 
     extras = ", ".join(
         f"{value} {key}" for key, value in sorted(counts.items())
-        if value and key not in ("bboxes", "kgroups")
+        if value and key not in ("bboxes", "kgroups", "masks")
     )
     print(
         f"{project.name}: {len(figures)} images, {counts['bboxes']} bboxes, "
-        f"{counts['kgroups']} kgroups -> {args.output}" + (f" ({extras})" if extras else "")
+        f"{counts['masks']} masks, {counts['kgroups']} kgroups -> {args.output}" + (f" ({extras})" if extras else "")
     )
 
 

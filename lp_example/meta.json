@@ -1,0 +1,66 @@
+{
+    "labels": [
+        {
+            "name": "vehicle",
+            "color": "blue",
+            "hotkey": 1,
+            "type": "BBOX",
+            "attributes": null
+        },
+        {
+            "name": "plate",
+            "color": "lime",
+            "hotkey": 2,
+            "type": "MASK",
+            "attributes": null
+        },
+        {
+            "name": "plate",
+            "color": "red",
+            "hotkey": 3,
+            "type": "KGROUP",
+            "attributes": {
+                "keypoint_info": {
+                    "tl": {
+                        "x": 0,
+                        "y": 0,
+                        "color": "orange"
+                    },
+                    "tr": {
+                        "x": 1,
+                        "y": 0,
+                        "color": "yellow"
+                    },
+                    "br": {
+                        "x": 1,
+                        "y": 1,
+                        "color": "cyan"
+                    },
+                    "bl": {
+                        "x": 0,
+                        "y": 1,
+                        "color": "violet"
+                    }
+                },
+                "connections": {
+                    "tl": [
+                        "tr",
+                        "bl"
+                    ],
+                    "tr": [
+                        "tl",
+                        "br"
+                    ],
+                    "br": [
+                        "tr",
+                        "bl"
+                    ],
+                    "bl": [
+                        "br",
+                        "tl"
+                    ]
+                }
+            }
+        }
+    ]
+}
