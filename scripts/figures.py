@@ -363,6 +363,21 @@ def rectangle_corners(points: list, rotation: float) -> list:
     return [min(xs), min(ys), max(xs), max(ys)]
 
 
+def inside_frame(x: float, y: float, width: int, height: int) -> bool:
+    return 0 <= x <= width and 0 <= y <= height
+
+
+def pull_into_frame(x: float, y: float, width: int, height: int) -> tuple:
+    """Drop a keypoint that lies past the frame perpendicularly onto the nearest edge.
+
+    CVAT fits boxes and polygons into the frame but keeps a skeleton point wherever it was
+    dropped, so a point meant for the edge ends a little past it. Clamping each coordinate on its
+    own is the perpendicular onto that edge, or the corner for a point past two edges at once —
+    the same fit CVAT gives a polygon.
+    """
+    return min(max(x, 0), width), min(max(y, 0), height)
+
+
 def read_task(source: Path) -> tuple[list, dict, list, dict]:
     """Read one source task directory into CVAT labels, per-image shapes and image paths."""
     images_dir = source / "img"
@@ -428,22 +443,17 @@ def figures_from_shapes(
             counts["bboxes"] += 1
         elif shape.type.value == "skeleton":
             label = names.get(shape.label_id, str(shape.label_id))
+            visible = [element for element in shape.elements if not element.outside]
+            counts["keypoints left outside"] += len(shape.elements) - len(visible)
+            width, height = frame["width"], frame["height"]
             points = []
-            for element in shape.elements:
-                if element.outside:
-                    counts["keypoints left outside"] += 1
-                    continue
+            for element in visible:
+                x, y = element.points[0], element.points[1]
+                if not inside_frame(x, y, width, height):
+                    x, y = pull_into_frame(x, y, width, height)
+                    counts["keypoints pulled to the frame edge"] += 1
                 sublabel, order = sublabels.get(element.label_id, (str(element.label_id), 0))
-                points.append(
-                    (
-                        order,
-                        {
-                            "x": round(element.points[0]),
-                            "y": round(element.points[1]),
-                            "label": sublabel,
-                        },
-                    )
-                )
+                points.append((order, {"x": round(x), "y": round(y), "label": sublabel}))
             # keep the keypoint order of the skeleton definition, as figures.json has it
             points = [point for _, point in sorted(points, key=lambda item: item[0])]
             figure["kgroups"].append(
