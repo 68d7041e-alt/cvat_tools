@@ -59,7 +59,9 @@ such as `{"br": ["bl", "fr"]}`, whose edges take the colour of their label.
 
 An entry of the `masks` list is `{"label": …, "rle": [...], "h": …, "w": …}`, where `rle` is the
 uncompressed COCO run list over the whole `h` by `w` frame: column-major, the first run counting
-background. `export-figures` writes masks back in the same encoding.
+background. `export-figures` writes masks back in the same encoding. A polygon drawn in CVAT is
+only a quicker way to draw a mask: `export-figures` fills it and writes it into the same list, in
+the same encoding.
 
 The server certificate is not verified: the package carries no CA file.
 

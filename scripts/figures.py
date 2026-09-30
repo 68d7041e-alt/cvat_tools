@@ -10,6 +10,8 @@ import math
 import sys
 from pathlib import Path
 
+from PIL import Image, ImageDraw
+
 # CSS colour names used by meta.json; an unlisted name is an error rather than a default.
 CSS_COLORS = {
     "aqua": "#00ffff",
@@ -249,6 +251,18 @@ def cvat_mask_to_coco_rle(points: list, height: int, width: int) -> list:
     return cvat_runs(b"".join(full[x::width] for x in range(width)))
 
 
+def polygon_to_coco_rle(points: list, height: int, width: int) -> list:
+    """A CVAT polygon [x1, y1, x2, y2, ...], filled, into COCO column-major runs over the image.
+
+    The mask holds every pixel the polygon covers, its outline included. CVAT has already fitted
+    the polygon into the frame, so nothing is drawn past the edge.
+    """
+    image = Image.new("L", (width, height), 0)
+    ImageDraw.Draw(image).polygon(list(zip(points[0::2], points[1::2])), fill=1, outline=1)
+    data = image.tobytes()
+    return cvat_runs(b"".join(data[x::width] for x in range(width)))
+
+
 def mask_names(meta: dict) -> set:
     return {entry["name"] for entry in meta["labels"] if entry["type"] == "MASK"}
 
@@ -478,6 +492,22 @@ def figures_from_shapes(
                 }
             )
             counts["masks"] += 1
+        elif shape.type.value == "polygon":
+            # A polygon is only a quicker way to draw a mask, so it leaves as one: same list,
+            # same encoding, and the reader of figures.json cannot tell the two apart.
+            label = names.get(shape.label_id, str(shape.label_id))
+            figure.setdefault("masks", []).append(
+                {
+                    "rle": polygon_to_coco_rle(
+                        list(shape.points), frame["height"], frame["width"]
+                    ),
+                    "h": frame["height"],
+                    "w": frame["width"],
+                    "label": label,
+                }
+            )
+            counts["masks"] += 1
+            counts["masks drawn as polygons"] += 1
         else:
             counts[f"{shape.type.value} shapes skipped"] += 1
 
