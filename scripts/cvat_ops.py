@@ -89,6 +89,7 @@ def label_names(client: Client, job_id: int) -> tuple[dict, dict]:
 def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dict) -> tuple:
     shapes = []
     tags = []
+    group_ids = {}
     for image_name, figure in annotations.items():
         frame = frames.get(image_name)
         if frame is None:
@@ -98,6 +99,12 @@ def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dic
             label_id = labels.get(shape["label"])
             if label_id is None:
                 sys.exit(f"label {shape['label']!r} was not created on the task")
+
+            # figures.json numbers groups within a frame, CVAT across the whole job, so every
+            # (frame, number) pair gets a job-wide number of its own.
+            group = 0
+            if shape.get("group"):
+                group = group_ids.setdefault((image_name, shape["group"]), len(group_ids) + 1)
 
             if shape["type"] == "tag":
                 tags.append(
@@ -115,6 +122,7 @@ def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dic
                         z_order=0,
                         rotation=0.0,
                         attributes=[],
+                        group=group,
                     )
                 )
             elif shape["type"] == "mask":
@@ -129,6 +137,7 @@ def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dic
                         z_order=0,
                         rotation=0.0,
                         attributes=[],
+                        group=group,
                     )
                 )
             elif shape["type"] == "skeleton":
@@ -164,6 +173,7 @@ def shape_requests(annotations: dict, frames: dict, labels: dict, sublabels: dic
                         rotation=0.0,
                         attributes=[],
                         elements=elements,
+                        group=group,
                     )
                 )
             else:

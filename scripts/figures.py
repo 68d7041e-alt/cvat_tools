@@ -296,6 +296,7 @@ def build_annotations(figures: dict, meta: dict, image_names: list) -> tuple[dic
                     "type": "rectangle",
                     "label": box["label"],
                     "points": [box["x1"], box["y1"], box["x2"], box["y2"]],
+                    "group": box.get("group"),
                 }
             )
             counts["boxes"] += 1
@@ -309,7 +310,12 @@ def build_annotations(figures: dict, meta: dict, image_names: list) -> tuple[dic
                 counts["dropped"] += 1
                 continue
             shapes.append(
-                {"type": "mask", "label": mask["label"], "points": points}
+                {
+                    "type": "mask",
+                    "label": mask["label"],
+                    "points": points,
+                    "group": mask.get("group"),
+                }
             )
             counts["masks"] += 1
 
@@ -343,6 +349,7 @@ def build_annotations(figures: dict, meta: dict, image_names: list) -> tuple[dic
                         }
                         for sublabel in wanted
                     ],
+                    "group": group.get("group"),
                 }
             )
             counts["skeletons"] += 1
@@ -428,6 +435,10 @@ def figures_from_shapes(
         }
         for frame in frames.values()
     }
+    # CVAT numbers groups across the whole job; figures.json numbers them 1, 2, 3 within each
+    # frame, which is all a reader needs to tell which shapes of a frame make one object.
+    group_numbers = {name: {} for name in figures}
+    written_to = {"rectangle": "bboxes", "skeleton": "kgroups", "mask": "masks", "polygon": "masks"}
 
     for tag in tags:
         frame = frames.get(tag.frame)
@@ -510,5 +521,11 @@ def figures_from_shapes(
             counts["masks drawn as polygons"] += 1
         else:
             counts[f"{shape.type.value} shapes skipped"] += 1
+
+        if shape.group and shape.type.value in written_to:
+            numbers = group_numbers[frame["name"]]
+            number = numbers.setdefault(shape.group, len(numbers) + 1)
+            figure[written_to[shape.type.value]][-1]["group"] = number
+            counts["grouped shapes"] += 1
 
     return figures

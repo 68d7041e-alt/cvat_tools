@@ -52,6 +52,11 @@ dropped, so a point placed for the edge usually lands a little past it. `export-
 a point perpendicularly onto the nearest edge, or onto the corner when it is past two edges. A
 point that is not visible at all belongs in `outside`, not past the edge.
 
+Shapes grouped in CVAT (G, click each, G) make one object, such as a tube's mask and its two
+ends. `export-figures` marks every box, mask and kgroup of a group with `"group": n`, numbered
+1, 2, 3 within each frame; a shape outside any group carries no such key. `import` reads the
+numbers back into CVAT groups, so a group survives the round trip.
+
 A frame may carry `"trash": true`, which becomes a CVAT tag named `trash` on that frame; every
 frame written by `export-figures` carries the flag. Skeleton edges come either from
 `keypoint_connections` as `{"from", "to", "color"}` objects or from a `connections` adjacency map
