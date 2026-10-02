@@ -22,7 +22,7 @@ export CVAT_URL=https://<address>
 export CVAT_ADMIN_LOGIN=admin
 export CVAT_ADMIN_PASSWORD=<password>
 
-.venv/bin/python scripts/cvat_ops.py import --source <task directory>
+.venv/bin/python scripts/cvat_ops.py import --source <task directory> [--polygons]
 .venv/bin/python scripts/cvat_ops.py assign --project <task directory name> --annotator User1
 .venv/bin/python scripts/cvat_ops.py export-figures --project <name> --output results/figures.json
 ```
@@ -66,7 +66,9 @@ An entry of the `masks` list is `{"label": …, "rle": [...], "h": …, "w": …
 uncompressed COCO run list over the whole `h` by `w` frame: column-major, the first run counting
 background. `export-figures` writes masks back in the same encoding. A polygon drawn in CVAT is
 only a quicker way to draw a mask: `export-figures` fills it and writes it into the same list, in
-the same encoding.
+the same encoding. `import --polygons` gives every `MASK` class a polygon label in CVAT, so
+annotators outline it with the polygon tool instead of the brush; masks already in `figures.json`
+still upload as masks, and the class still exports as masks.
 
 The server certificate is not verified: the package carries no CA file.
 

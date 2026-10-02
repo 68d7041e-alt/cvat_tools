@@ -208,6 +208,11 @@ def cmd_import(client: Client, args: argparse.Namespace) -> None:
         sys.exit(f"a project named {name!r} already exists on the server")
 
     labels, annotations, images, counts = read_task(args.source)
+    if args.polygons:
+        # A MASK class still leaves as a mask; only the tool the annotator draws it with changes.
+        for label in labels:
+            if label["type"] == "mask":
+                label["type"] = "polygon"
     print(
         f"{name}: {len(images)} images, {counts['boxes']} boxes, {counts['masks']} masks, "
         f"{counts['skeletons']} skeletons, {counts['trash']} trash "
@@ -288,6 +293,11 @@ def parse_args() -> argparse.Namespace:
 
     importer = subparsers.add_parser("import", help="create a project, a task and a job from a task directory")
     importer.add_argument("--source", type=Path, required=True)
+    importer.add_argument(
+        "--polygons",
+        action="store_true",
+        help="let annotators outline MASK classes with the polygon tool; they still export as masks",
+    )
 
     assign = subparsers.add_parser("assign", help="give every job of a project to an annotator")
     assign.add_argument("--project", required=True)
