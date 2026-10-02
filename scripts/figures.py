@@ -414,7 +414,9 @@ def read_task(source: Path) -> tuple[list, dict, list, dict]:
         sys.exit(f"{len(missing)} images have no entry in figures.json, first is {missing[0]}")
 
     labels = build_labels(meta)
-    if any("trash" in figure for figure in figures.values()):
+    # Every task carries the tag, not only one whose figures.json already marks a frame: a
+    # detector never writes "trash", and without the tag an annotator has nothing to mark with.
+    if not any(label["name"] == TRASH_LABEL for label in labels):
         labels.append({"name": TRASH_LABEL, "type": "tag", "color": color("gray"), "attributes": []})
 
     annotations, counts = build_annotations(figures, meta, [path.name for path in images])

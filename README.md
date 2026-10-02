@@ -57,8 +57,9 @@ ends. `export-figures` marks every box, mask and kgroup of a group with `"group"
 1, 2, 3 within each frame; a shape outside any group carries no such key. `import` reads the
 numbers back into CVAT groups, so a group survives the round trip.
 
-A frame may carry `"trash": true`, which becomes a CVAT tag named `trash` on that frame; every
-frame written by `export-figures` carries the flag. Skeleton edges come either from
+Every project gets a CVAT tag named `trash`, so an annotator can mark a frame that should not be
+used. A frame may carry `"trash": true`, which becomes that tag on the frame; every frame written
+by `export-figures` carries the flag. Skeleton edges come either from
 `keypoint_connections` as `{"from", "to", "color"}` objects or from a `connections` adjacency map
 such as `{"br": ["bl", "fr"]}`, whose edges take the colour of their label.
 
