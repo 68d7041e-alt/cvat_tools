@@ -10,6 +10,8 @@ import math
 import sys
 from pathlib import Path
 
+from PIL import Image, ImageDraw
+
 # CSS colour names used by meta.json; an unlisted name is an error rather than a default.
 CSS_COLORS = {
     "aqua": "#00ffff",
@@ -249,6 +251,18 @@ def cvat_mask_to_coco_rle(points: list, height: int, width: int) -> list:
     return cvat_runs(b"".join(full[x::width] for x in range(width)))
 
 
+def polygon_to_coco_rle(points: list, height: int, width: int) -> list:
+    """A CVAT polygon [x1, y1, x2, y2, ...], filled, into COCO column-major runs over the image.
+
+    The mask holds every pixel the polygon covers, its outline included. CVAT has already fitted
+    the polygon into the frame, so nothing is drawn past the edge.
+    """
+    image = Image.new("L", (width, height), 0)
+    ImageDraw.Draw(image).polygon(list(zip(points[0::2], points[1::2])), fill=1, outline=1)
+    data = image.tobytes()
+    return cvat_runs(b"".join(data[x::width] for x in range(width)))
+
+
 def mask_names(meta: dict) -> set:
     return {entry["name"] for entry in meta["labels"] if entry["type"] == "MASK"}
 
@@ -282,6 +296,7 @@ def build_annotations(figures: dict, meta: dict, image_names: list) -> tuple[dic
                     "type": "rectangle",
                     "label": box["label"],
                     "points": [box["x1"], box["y1"], box["x2"], box["y2"]],
+                    "group": box.get("group"),
                 }
             )
             counts["boxes"] += 1
@@ -295,7 +310,12 @@ def build_annotations(figures: dict, meta: dict, image_names: list) -> tuple[dic
                 counts["dropped"] += 1
                 continue
             shapes.append(
-                {"type": "mask", "label": mask["label"], "points": points}
+                {
+                    "type": "mask",
+                    "label": mask["label"],
+                    "points": points,
+                    "group": mask.get("group"),
+                }
             )
             counts["masks"] += 1
 
@@ -329,6 +349,7 @@ def build_annotations(figures: dict, meta: dict, image_names: list) -> tuple[dic
                         }
                         for sublabel in wanted
                     ],
+                    "group": group.get("group"),
                 }
             )
             counts["skeletons"] += 1
@@ -363,6 +384,21 @@ def rectangle_corners(points: list, rotation: float) -> list:
     return [min(xs), min(ys), max(xs), max(ys)]
 
 
+def inside_frame(x: float, y: float, width: int, height: int) -> bool:
+    return 0 <= x <= width and 0 <= y <= height
+
+
+def pull_into_frame(x: float, y: float, width: int, height: int) -> tuple:
+    """Drop a keypoint that lies past the frame perpendicularly onto the nearest edge.
+
+    CVAT fits boxes and polygons into the frame but keeps a skeleton point wherever it was
+    dropped, so a point meant for the edge ends a little past it. Clamping each coordinate on its
+    own is the perpendicular onto that edge, or the corner for a point past two edges at once —
+    the same fit CVAT gives a polygon.
+    """
+    return min(max(x, 0), width), min(max(y, 0), height)
+
+
 def read_task(source: Path) -> tuple[list, dict, list, dict]:
     """Read one source task directory into CVAT labels, per-image shapes and image paths."""
     images_dir = source / "img"
@@ -378,7 +414,9 @@ def read_task(source: Path) -> tuple[list, dict, list, dict]:
         sys.exit(f"{len(missing)} images have no entry in figures.json, first is {missing[0]}")
 
     labels = build_labels(meta)
-    if any("trash" in figure for figure in figures.values()):
+    # Every task carries the tag, not only one whose figures.json already marks a frame: a
+    # detector never writes "trash", and without the tag an annotator has nothing to mark with.
+    if not any(label["name"] == TRASH_LABEL for label in labels):
         labels.append({"name": TRASH_LABEL, "type": "tag", "color": color("gray"), "attributes": []})
 
     annotations, counts = build_annotations(figures, meta, [path.name for path in images])
@@ -399,6 +437,10 @@ def figures_from_shapes(
         }
         for frame in frames.values()
     }
+    # CVAT numbers groups across the whole job; figures.json numbers them 1, 2, 3 within each
+    # frame, which is all a reader needs to tell which shapes of a frame make one object.
+    group_numbers = {name: {} for name in figures}
+    written_to = {"rectangle": "bboxes", "skeleton": "kgroups", "mask": "masks", "polygon": "masks"}
 
     for tag in tags:
         frame = frames.get(tag.frame)
@@ -428,22 +470,17 @@ def figures_from_shapes(
             counts["bboxes"] += 1
         elif shape.type.value == "skeleton":
             label = names.get(shape.label_id, str(shape.label_id))
+            visible = [element for element in shape.elements if not element.outside]
+            counts["keypoints left outside"] += len(shape.elements) - len(visible)
+            width, height = frame["width"], frame["height"]
             points = []
-            for element in shape.elements:
-                if element.outside:
-                    counts["keypoints left outside"] += 1
-                    continue
+            for element in visible:
+                x, y = element.points[0], element.points[1]
+                if not inside_frame(x, y, width, height):
+                    x, y = pull_into_frame(x, y, width, height)
+                    counts["keypoints pulled to the frame edge"] += 1
                 sublabel, order = sublabels.get(element.label_id, (str(element.label_id), 0))
-                points.append(
-                    (
-                        order,
-                        {
-                            "x": round(element.points[0]),
-                            "y": round(element.points[1]),
-                            "label": sublabel,
-                        },
-                    )
-                )
+                points.append((order, {"x": round(x), "y": round(y), "label": sublabel}))
             # keep the keypoint order of the skeleton definition, as figures.json has it
             points = [point for _, point in sorted(points, key=lambda item: item[0])]
             figure["kgroups"].append(
@@ -468,7 +505,29 @@ def figures_from_shapes(
                 }
             )
             counts["masks"] += 1
+        elif shape.type.value == "polygon":
+            # A polygon is only a quicker way to draw a mask, so it leaves as one: same list,
+            # same encoding, and the reader of figures.json cannot tell the two apart.
+            label = names.get(shape.label_id, str(shape.label_id))
+            figure.setdefault("masks", []).append(
+                {
+                    "rle": polygon_to_coco_rle(
+                        list(shape.points), frame["height"], frame["width"]
+                    ),
+                    "h": frame["height"],
+                    "w": frame["width"],
+                    "label": label,
+                }
+            )
+            counts["masks"] += 1
+            counts["masks drawn as polygons"] += 1
         else:
             counts[f"{shape.type.value} shapes skipped"] += 1
+
+        if shape.group and shape.type.value in written_to:
+            numbers = group_numbers[frame["name"]]
+            number = numbers.setdefault(shape.group, len(numbers) + 1)
+            figure[written_to[shape.type.value]][-1]["group"] = number
+            counts["grouped shapes"] += 1
 
     return figures

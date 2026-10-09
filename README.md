@@ -22,7 +22,7 @@ export CVAT_URL=https://<address>
 export CVAT_ADMIN_LOGIN=admin
 export CVAT_ADMIN_PASSWORD=<password>
 
-.venv/bin/python scripts/cvat_ops.py import --source <task directory>
+.venv/bin/python scripts/cvat_ops.py import --source <task directory> [--polygons]
 .venv/bin/python scripts/cvat_ops.py assign --project <task directory name> --annotator User1
 .venv/bin/python scripts/cvat_ops.py export-figures --project <name> --output results/figures.json
 ```
@@ -47,14 +47,29 @@ and its connections. CVAT requires top-level label names to be unique within a p
 given to more than one shape stops the import. A keypoint missing from a group is uploaded as an
 element marked `outside`; `export-figures` drops it again and strips the skeleton suffix.
 
-A frame may carry `"trash": true`, which becomes a CVAT tag named `trash` on that frame; every
-frame written by `export-figures` carries the flag. Skeleton edges come either from
+CVAT fits boxes and polygons into the frame but keeps a skeleton point wherever it was
+dropped, so a point placed for the edge usually lands a little past it. `export-figures` drops such
+a point perpendicularly onto the nearest edge, or onto the corner when it is past two edges. A
+point that is not visible at all belongs in `outside`, not past the edge.
+
+Shapes grouped in CVAT (G, click each, G) make one object, such as a tube's mask and its two
+ends. `export-figures` marks every box, mask and kgroup of a group with `"group": n`, numbered
+1, 2, 3 within each frame; a shape outside any group carries no such key. `import` reads the
+numbers back into CVAT groups, so a group survives the round trip.
+
+Every project gets a CVAT tag named `trash`, so an annotator can mark a frame that should not be
+used. A frame may carry `"trash": true`, which becomes that tag on the frame; every frame written
+by `export-figures` carries the flag. Skeleton edges come either from
 `keypoint_connections` as `{"from", "to", "color"}` objects or from a `connections` adjacency map
 such as `{"br": ["bl", "fr"]}`, whose edges take the colour of their label.
 
 An entry of the `masks` list is `{"label": …, "rle": [...], "h": …, "w": …}`, where `rle` is the
 uncompressed COCO run list over the whole `h` by `w` frame: column-major, the first run counting
-background. `export-figures` writes masks back in the same encoding.
+background. `export-figures` writes masks back in the same encoding. A polygon drawn in CVAT is
+only a quicker way to draw a mask: `export-figures` fills it and writes it into the same list, in
+the same encoding. `import --polygons` gives every `MASK` class a polygon label in CVAT, so
+annotators outline it with the polygon tool instead of the brush; masks already in `figures.json`
+still upload as masks, and the class still exports as masks.
 
 The server certificate is not verified: the package carries no CA file.
 
